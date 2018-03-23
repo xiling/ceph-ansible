@@ -23,3 +23,7 @@ client0
 
 [rbdmirrors]
 rbd-mirror0
+
+[iscsi-gws]
+# note: iscsi is only available on centos and latest points to ubuntu at present
+iscsi-gw0 ceph_docker_image_tag=master-be33ad2-luminous-centos-7-x86_64  # first commit where iscsi container was introduced
