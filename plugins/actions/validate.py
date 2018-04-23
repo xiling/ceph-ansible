@@ -3,7 +3,8 @@ from ansible.plugins.action import ActionBase
 
 import notario
 from notario.exceptions import Invalid
-from notario.validators import types, chainable
+from notario.validators import types, chainable, iterables, recursive
+from notario.decorators import optional
 from notario.store import store as notario_store
 
 try:
@@ -49,6 +50,18 @@ class ActionModule(ActionBase):
             notario_store["monitor_interface"] = host_vars.get("monitor_interface", None)
 
             notario.validate(host_vars, monitor_options, defined_keys=True)
+
+            # validate osd scenario setup
+            notario.validate(host_vars, osd_options, defined_keys=True)
+            notario_store['objectstore'] = host_vars["objectstore"]
+            if host_vars["osd_scenario"] == "collocated":
+                notario.validate(host_vars, collocated_osd_scenario, defined_keys=True)
+
+            if host_vars["osd_scenario"] == "non-collocated":
+                notario.validate(host_vars, non_collocated_osd_scenario, defined_keys=True)
+
+            if host_vars["osd_scenario"] == "lvm":
+                notario.validate(host_vars, lvm_osd_scenario, defined_keys=True)
 
         except Invalid as error:
             display.vvvv("Notario Failure: %s" % str(error))
@@ -96,6 +109,20 @@ def validate_monitor_options(value):
     assert any(monitor_address_given, monitor_address_block_given, monitor_interface_given), msg
 
 
+def validate_osd_scenarios(value):
+    assert value in ["collocated", "non-collocated", "lvm"], "osd_scenario must be set to 'collocated', 'non-collocated' or 'lvm'"
+
+
+def validate_objectstore(value):
+    assert value in ["filestore", "bluestore"], "objectstore must be set to 'filestore' or 'bluestore'"
+
+
+def validate_lvm_volumes(value):
+    assert 'data' in value, "lvm_volumes must contain a 'data' key"
+    if notario_store['objectstore'] == "filestore":
+        assert "journal" in value, "lvm_volumes must contain a 'journal' key when the objectstore is 'filestore'"
+
+
 install_options = (
     ("ceph_origin", ceph_origin_choices),
     ('osd_objectstore', osd_objectstore_choices),
@@ -128,3 +155,19 @@ monitor_options = (
     ("monitor_address_block", validate_monitor_options),
     ("monitor_interface", validate_monitor_options),
 )
+
+osd_options = (
+    (optional("dmcrypt"), types.boolean),
+    ("osd_scenario", validate_osd_scenarios),
+    (optional("objectstore"), validate_objectstore),
+)
+
+collocated_osd_scenario = ("devices", iterables.AllItems(types.string))
+
+non_collocated_osd_scenario = (
+    (optional("bluestore_wal_devices"), iterables.AllItems(types.string)),
+    ("devices", iterables.AllItems(types.string)),
+    (optional("dedicated_devices"), iterables.AllItems(types.string)),
+)
+
+lvm_osd_scenario = ("lvm_volumes", recursive.AllObjects((types.dictionary, validate_lvm_volumes)))
